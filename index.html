@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<script src="jquery-1.11.0.min.js"></script>
+		<script src="Fields.js"></script>
+		<script src="ExterneIntegratie.js"></script>
+		<script src="IO31Metadata.js"></script>
+		<script>
+			$(function(){
+				var records;
+				var previousRecordDepth = 0, blockElement;
+				
+				function renderRecord(record, metadata) {
+					var lineElement = $("<div class='line'><span class='lineNumber'>" + record.lineNumber + "</span></div>");
+					var recordElement = $("<div class='record'></div>").appendTo(lineElement);
+					recordElement.addClass("indent-" + record.recordNode.depth);
+					for(var name in record) {
+						var fieldElement = $("<span class='field'></span>").appendTo(recordElement);
+						var filter = $("#filter").val();
+						if(filter !== "" && record[name].toString().indexOf(filter) >= 0) {
+							fieldElement.addClass("filter");
+						}
+						if(!metadata[name].isValid(record[name])) {
+							fieldElement.addClass("invalid");
+						}
+						var field = metadata[name].serialize(record[name]);
+						fieldElement.html(field.split(" ").join("&nbsp;"));
+						fieldElement.attr("title", name);
+						fieldElement.data("record", record);
+						fieldElement.click(function() {
+							var record = $(this).data("record");
+							var name = $(this).attr("title");
+							console.log(metadata[name]);
+							$("#fieldEdit>h2").text(metadata.displayName + "." + name);
+							$("#fieldEdit>input").val(record[name]);
+							$("#fieldEdit>button").data("fieldInfo", {
+								record: record,
+								name: name
+							});
+						});
+					}
+					return lineElement;
+				}
+				
+				function renderRecords(result) {
+					records = result;
+					$(".message").html("");
+					var blockElement, previousParentElement;
+					for(var i = 0; i < records.length; i++) {
+						var record = records[i];
+						if(record instanceof ei.ExterneIntegratieRecord) {
+							var currentElement;
+							if(record.recordNode.depth > 0 && previousRecordDepth == 0) {
+								var button = $("<button class='collapseButton'>-</button>").appendTo(previousParentElement.children(".lineNumber"));
+								blockElement = $("<div class='block'></div>");
+								button.click(function(){
+									var text = $(this).text();
+									if(text == "+") {
+										$(this).text("-");
+									} else {
+										$(this).text("+");
+									}
+									$(this).closest(".line").next().toggleClass("hide");
+								});
+								currentElement = renderRecord(record, record.recordNode.metadata).appendTo(blockElement);								
+							} else if (record.recordNode.depth == 0 && previousRecordDepth != 0) {
+								blockElement.appendTo(".message");
+								currentElement = renderRecord(record, record.recordNode.metadata).appendTo(".message");
+							} else if (record.recordNode.depth > 0) {
+								currentElement = renderRecord(record, record.recordNode.metadata).appendTo(blockElement);									
+							} else {
+								currentElement = renderRecord(record, record.recordNode.metadata).appendTo(".message");							
+							}
+							
+							if(record.recordNode.depth == 0) {
+								previousParentElement = currentElement;
+							}
+							previousRecordDepth = record.recordNode.depth;
+						} else if(record instanceof ei.MisplacedRecord) {
+							renderRecord(record, record.metadata).addClass("misplaced").appendTo(".message");
+						} else if(record instanceof ei.UnknownRecord) {
+							var lineElement = $("<div class='line'><span class='lineNumber'>" + record.lineNumber + "</span></div>");
+							var recordElement = $("<div class='record'></div>");
+							recordElement.text(record.line);
+							recordElement.addClass("unknown");
+							lineElement.appendTo(".message");
+						}
+					}
+				};
+				
+				$("#filter").keyup(function() {
+					renderRecords(records);
+				});
+				
+				$("#overwriteButton").click(function() {
+					var fieldInfo = $(this).data("fieldInfo");
+					fieldInfo.record[fieldInfo.name] = $("#fieldEdit>input").val();
+					renderRecords(records);
+				});
+			
+				$("#processMessageButton").click(function() {
+					var reader = new ei.EIReader(ei.metadata.io31.bericht);
+					reader.read(document.getElementById("eiBerichtInput").files[0], renderRecords);
+				});
+				
+				$("#toggleIndentationButton").click(function() {
+					$(".message").toggleClass("indented");
+				});
+				
+				function handleDragOver(evt) {
+					evt.stopPropagation();
+					evt.preventDefault();
+					evt.dataTransfer.dropEffect = 'Open';
+				}
+				
+				function fileDropped(evt) {
+					evt.stopPropagation();
+					evt.preventDefault();
+					
+					var reader = new ei.EIReader(ei.metadata.io31.bericht);
+					reader.read(evt.dataTransfer.files[0], renderRecords);
+				}
+				
+				var dropZone = $(".container")[0];
+				dropZone.addEventListener('dragover', handleDragOver, false);
+				dropZone.addEventListener('drop', fileDropped, false);
+			});
+		</script>
+		<style>
+			.container {
+				font-size: 1em;
+				font-family: "Courier New";
+				margin-top: 20px;
+				margin-left: 10px;
+				white-space: nowrap;
+			}
+			
+			.line {
+				white-space: nowrap;
+				display: block;
+			}
+			
+			.message {
+				display: inline-block;
+				height: 50vh;
+				overflow-y: auto;
+				max-width: 100%;
+			}
+			
+			.message.indented {
+			}
+		
+			.record {
+				display: inline-block;
+				white-space: nowrap;
+			}
+			
+			.record.unknown {
+				color: lightgray;
+			}
+			
+			.record.misplaced {
+				color: #555555;
+			}
+			
+			.block.hide {
+				display: none;
+			}
+			
+			.message.indented .record.indent-1 {
+				margin-left: 2ch;
+			}
+			
+			.message.indented .record.indent-2 {
+				margin-left: 4ch;
+			}
+			
+			.message.indented .record.indent-3 {
+				margin-left: 6ch;
+			}
+			
+			.message.indented .record.indent-4 {
+				margin-left: 8ch;
+			}
+			
+			.message.indented .record.indent-5 {
+				margin-left: 10ch;
+			}
+			
+			.message.indented .record.indent-6 {
+				margin-left: 12ch;
+			}
+			
+			.collapseButton {
+				position: absolute;
+				background-color: white;
+				border: 1px solid gray;
+				padding: 1px;
+				line-height: 9px;
+				font-family: "Courier New";
+				top: 2px;
+				right: -6px;
+				color: gray;
+				content: "-";
+			}
+			
+			.collapseButton.closed {
+				content: "+";
+			}
+			
+			.lineNumber {
+				position: relative;
+				width: 4ch;
+				display: inline-block;
+				text-align: right;
+				padding-right: 10px;
+				margin-right: 10px;
+				border-right: 1px solid gray;
+			}
+			
+			.lineNumber > span {
+				text-align: right;
+			}
+			
+			.field {
+				white-space: nowrap;
+			}
+			
+			.field:hover {
+				background-color: #FFFFAA;
+			}
+			
+			.field.invalid {
+				background-color: #FF5555;
+			}
+			
+			.field.filter {
+				background-color: #FFFFAA;			
+			}
+		</style>
+	</head>
+	<body>
+		<input type="file" id="eiBerichtInput" />
+		<button id="processMessageButton">Verwerk bericht</button>
+		<button id="toggleIndentationButton">Inspringing aan/uit</button>
+		<input type="text" id="filter" />
+		<div class="container">
+			<div class="lineNumbers"></div>
+			<div class="message">
+				
+			</div>
+		</div>
+		<div id="fieldEdit">
+			<h2></h2>
+			<input type="text" />
+			<button id="overwriteButton">Overschrijf</button>
+		</div>
+	</body>
+</html>
